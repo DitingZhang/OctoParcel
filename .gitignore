@@ -1,0 +1,28 @@
+# Runtime state — never committed
+.local-state/
+build/
+target/
+
+# Backups and intermediate files
+*.bak
+*.bak.*
+*.before_floor
+*.tmp
+*.orig
+*.rej
+
+# Keys, certs, secrets
+*.key
+*.cert
+*.secret
+*.env
+
+# OS / editor cruft
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~
+
+# Card-host artifacts
+card-host.log

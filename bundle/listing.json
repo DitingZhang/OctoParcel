@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "subtitle": "Proactive butler for your parcels",
+  "description": "An Agentic parcel butler for your shopping. Mock orders are scanned on every boot and again on demand; the app flags parcels that are stuck in transit, close to missing a return window, or past their expected delivery, then proposes a concrete action script (e.g. a polite nudge to the seller) for you to confirm or reject in one tap.",
+  "category": "productivity",
+  "keywords": ["parcels", "tracking", "shopping"],
+  "screenshots": ["screenshots/01-main.png"],
+  "icon": "assets/icon.svg",
+  "platforms": ["android"],
+  "publisher": {
+    "name": "Hackathon Team",
+    "support": "https://example.com/support",
+    "privacy_policy_url": "https://example.com/privacy"
+  },
+  "release_notes": "Initial hackathon build.",
+  "age_rating": "all",
+  "license": "Apache-2.0"
+}

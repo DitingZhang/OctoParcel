@@ -1,0 +1,431 @@
+// =====================================================================
+// Parcel Tracker — Agentic parcel butler (hackathon build)
+// L0 notes:
+//   * widgets must be declared INLINE in on_render; calling a function
+//     that returns a widget renders nothing
+//   * RoundedView and border_radius on nested widgets panic card-host;
+//     use SolidView for backgrounds
+//   * top-level `let` reassignment works; local `let` inside widget
+//     constructor body is not allowed
+// =====================================================================
+
+let orders = [
+    {id: "TB-2024-98765", platform: "淘宝",     name: "小米手环 8",       carrier: "顺丰",     status: "已到达 杭州转运中心", last_update_offset_h: 2,   expected_offset_h: 18,   signed_offset_h: nil},
+    {id: "JD-2024-55432", platform: "京东",     name: "Kindle Paperwhite", carrier: "京东物流", status: "等待自提",            last_update_offset_h: 36,  expected_offset_h: -6,   signed_offset_h: nil},
+    {id: "TB-2024-12345", platform: "淘宝",     name: "罗技 MX Master 3S", carrier: "中通",     status: "已签收",              last_update_offset_h: 36,  expected_offset_h: -144, signed_offset_h: 144},
+    {id: "JD-2024-77777", platform: "京东",     name: "Sony WH-1000XM5",   carrier: "京东物流", status: "派送中",              last_update_offset_h: 22,  expected_offset_h: 2,    signed_offset_h: nil}
+]
+
+let boot_time = 0.0
+let decisions = {}
+let current_view = "overview"
+let current_order_id = ""
+let pending_top = nil
+let pending_reason = ""
+let result_ok = false
+let result_script = ""
+let result_reason = ""
+let confirm_mode = false
+let sorted_orders_cache = []
+
+fn load(){
+    if fs.exists("session.json") {
+        let v = fs.read("session.json").parse_json()
+        if v != nil and v.boot_time != nil { boot_time = v.boot_time }
+    }
+    if boot_time == 0.0 {
+        boot_time = time_now()
+        fs.write("session.json", {version: 1, boot_time: boot_time}.to_json())
+    }
+    if fs.exists("decisions.json") {
+        let v = fs.read("decisions.json").parse_json()
+        if v != nil and v.decisions != nil { decisions = v.decisions }
+    }
+}
+
+fn save_decisions(){
+    fs.write("decisions.json", {version: 1, decisions: decisions}.to_json())
+}
+
+fn hours_since_update(o){
+    let drift = (time_now() - boot_time) / 3600.0
+    return drift + o.last_update_offset_h
+}
+
+fn score(o){
+    if decisions[o.id] != nil { return 5 }
+    let h = hours_since_update(o)
+    let drift = (time_now() - boot_time) / 3600.0
+    if o.signed_offset_h != nil and o.signed_offset_h >= 24 and o.signed_offset_h <= 168 {
+        let remaining = 168 - o.signed_offset_h - drift
+        if remaining > 0 and remaining < 48 { return 60 }
+    }
+    if h > 24 { return 80 }
+    if o.signed_offset_h == nil and o.expected_offset_h < drift { return 40 }
+    return 10
+}
+
+fn urgency_text(s){
+    if s == 80 { return "物流停滞" }
+    if s == 60 { return "退货窗口临近" }
+    if s == 40 { return "已逾期" }
+    if s == 5 { return "已决策" }
+    return "正常"
+}
+
+fn action_text(s){
+    if s == 80 { return "联系卖家催单" }
+    if s == 60 { return "申请退货退款" }
+    if s == 40 { return "联系卖家催单" }
+    return ""
+}
+
+fn action_script(o){
+    let s = score(o)
+    if s == 80 or s == 40 {
+        let h = hours_since_update(o)
+        return "亲，我的订单 [" + o.id + "] (" + o.name + ") 在 " + o.carrier + " 已经 " + floor(h) + " 小时没有更新物流了，麻烦帮我催一下，谢谢！"
+    }
+    if s == 60 {
+        return "亲，我的订单 [" + o.id + "] (" + o.name + ") 已签收，想在 7 天退货窗口内申请退货退款，麻烦协助处理一下，谢谢！"
+    }
+    return ""
+}
+
+fn sort_orders(){
+    let arr = []
+    for i in orders.len() { arr.push(orders[i]) }
+    let sorted = []
+    while arr.len() > 0 {
+        let best_idx = 0
+        let best_score = score(arr[0])
+        for i in arr.len() {
+            if score(arr[i]) > best_score {
+                best_idx = i
+                best_score = score(arr[i])
+            }
+        }
+        sorted.push(arr[best_idx])
+        arr.remove(best_idx)
+    }
+    sorted_orders_cache = sorted
+}
+
+fn find_pending(){
+    sort_orders()
+    pending_top = nil
+    pending_reason = ""
+    for i in sorted_orders_cache.len() {
+        let o = sorted_orders_cache[i]
+        if decisions[o.id] == nil {
+            let s = score(o)
+            if s >= 40 {
+                pending_top = o
+                if s == 80 {
+                    let h = hours_since_update(o)
+                    pending_reason = "在 " + o.carrier + " 已 " + floor(h) + " 小时未更新"
+                }
+                if s == 60 {
+                    let drift = (time_now() - boot_time) / 3600.0
+                    let remaining = 168 - o.signed_offset_h - drift
+                    pending_reason = "退货窗口仅剩 " + floor(remaining) + " 小时"
+                }
+                if s == 40 {
+                    let overdue = 0 - o.expected_offset_h
+                    pending_reason = "已逾期 " + overdue + " 小时，未签收"
+                }
+                return
+            }
+        }
+    }
+}
+
+fn find_order(id){
+    for i in orders.len() {
+        if orders[i].id == id { return orders[i] }
+    }
+    return nil
+}
+
+fn show(view, id){
+    if id != "" { current_order_id = id }
+    current_view = view
+    if view == "detail" { confirm_mode = false }
+    if view == "confirm" { confirm_mode = true }
+    ui.overview.set_visible(view == "overview")
+    ui.detail.set_visible(view == "detail" or view == "confirm")
+    ui.result_pane.set_visible(view == "result")
+    if view == "overview" { ui.overview.render() }
+    if view == "detail" or view == "confirm" { ui.detail.render() }
+    if view == "result" { ui.result_pane.render() }
+}
+
+fn rescan(){
+    find_pending()
+    ui.overview.render()
+}
+
+fn confirm_action(){
+    let o = find_order(current_order_id)
+    if o == nil { return }
+    let script_txt = action_script(o)
+    decisions[o.id] = {
+        result: "confirmed",
+        action_script: script_txt,
+        reason: "",
+        decided_at: time_now()
+    }
+    save_decisions()
+    result_script = script_txt
+    result_reason = ""
+    result_ok = true
+    show("result", "")
+}
+
+fn reject_action(){
+    let o = find_order(current_order_id)
+    if o == nil { return }
+    let reason = ui.reject_input.text()
+    if reason == "" { reason = "未填理由" }
+    decisions[o.id] = {
+        result: "rejected",
+        action_script: "",
+        reason: reason,
+        decided_at: time_now()
+    }
+    save_decisions()
+    result_ok = false
+    result_script = ""
+    result_reason = reason
+    show("result", "")
+}
+
+fn boot(){
+    load()
+    find_pending()
+    sort_orders()
+    show("overview", "")
+}
+
+start_timeout(0.1, || boot())
+
+// =====================================================================
+SolidView{width: Fill height: Fill draw_bg.color: #xf2f2f7
+
+    overview := ScrollYView{width: Fill height: Fill flow: Down padding: 0 spacing: 0
+        on_render: || {
+            // Header
+            View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 8 padding: Inset{left: 16 right: 16 top: 16 bottom: 8}
+                View{width: Fill height: Fit flow: Down spacing: 2
+                    Label{width: Fill text: "Parcel Tracker" draw_text.color: #x1c1c1e draw_text.text_style.font_size: 22}
+                    Label{width: Fill text: "主动监控 · 4 笔订单" draw_text.color: #x8e8e93 draw_text.text_style.font_size: 12}
+                }
+                ButtonFlat{text: "⟳ 重新评估" height: 36 padding: Inset{left: 14 right: 14}
+                    on_click: || rescan()
+                    draw_bg +: {color: #xeff6ff color_hover: #xd0e8ff color_down: #xb0d4ff border_size: 0.0}
+                    draw_text +: {color: #x007aff color_hover: #x007aff color_down: #x007aff}}
+            }
+
+            // Pending banner
+            if pending_top != nil {
+                GestureView{width: Fill height: Fit padding: Inset{left: 16 right: 16 top: 0 bottom: 8}
+                    on_tap: |x, y| show("detail", pending_top.id)
+                    SolidView{width: Fill height: Fit draw_bg.color: #xffeaea
+                        View{width: Fill height: Fit flow: Down padding: 12 spacing: 4
+                            Label{width: Fill text: "⚠ 检测到需要决策的订单" draw_text.color: #xff3b30 draw_text.text_style.font_size: 13}
+                            Label{width: Fill text: pending_top.name draw_text.color: #x1c1c1e draw_text.text_style.font_size: 16}
+                            Label{width: Fill text: pending_reason draw_text.color: #xff3b30 draw_text.text_style.font_size: 12}
+                            Label{width: Fill text: "查看详情 ›" draw_text.color: #xff3b30 draw_text.text_style.font_size: 12}
+                        }
+                    }
+                }
+            }
+
+            // Order list
+            View{width: Fill height: Fit flow: Down padding: Inset{left: 16 right: 16 top: 0 bottom: 16} spacing: 8
+                for i in sorted_orders_cache.len() {
+                    let o = sorted_orders_cache[i]
+                    let s = score(o)
+                    let d = decisions[o.id]
+                    GestureView{width: Fill height: 84
+                        on_tap: |x, y| show("detail", o.id)
+                        SolidView{width: Fill height: Fill draw_bg.color: #xffffffff
+                            View{width: Fill height: Fill flow: Right padding: 0 spacing: 0
+                                if s == 80 { View{width: 4 height: Fill draw_bg.color: #xff3b30} }
+                                if s == 60 { View{width: 4 height: Fill draw_bg.color: #xff9500} }
+                                if s == 40 { View{width: 4 height: Fill draw_bg.color: #xff3b30} }
+                                if s == 10 { View{width: 4 height: Fill draw_bg.color: #xe5e5ea} }
+                                View{width: Fill height: Fill flow: Down padding: 12 spacing: 6
+                                    View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 6
+                                        Label{width: Fill text: o.platform + " · " + o.name draw_text.color: #x1c1c1e draw_text.text_style.font_size: 15}
+                                        if d != nil and d.result == "confirmed" {
+                                            Label{text: "已确认" draw_text.color: #x8e8e93 draw_text.text_style.font_size: 12}
+                                        }
+                                        if d != nil and d.result == "rejected" {
+                                            Label{text: "已驳回" draw_text.color: #x8e8e93 draw_text.text_style.font_size: 12}
+                                        }
+                                        if d == nil and s == 80 {
+                                            Label{text: "物流停滞" draw_text.color: #xff3b30 draw_text.text_style.font_size: 12}
+                                            View{width: 8 height: 8 draw_bg.color: #xff3b30}
+                                        }
+                                        if d == nil and s == 60 {
+                                            Label{text: "退货窗口临近" draw_text.color: #xff9500 draw_text.text_style.font_size: 12}
+                                            View{width: 8 height: 8 draw_bg.color: #xff9500}
+                                        }
+                                        if d == nil and s == 40 {
+                                            Label{text: "已逾期" draw_text.color: #xff3b30 draw_text.text_style.font_size: 12}
+                                            View{width: 8 height: 8 draw_bg.color: #xff3b30}
+                                        }
+                                        if d == nil and s == 10 {
+                                            Label{text: "正常" draw_text.color: #x8e8e93 draw_text.text_style.font_size: 12}
+                                        }
+                                    }
+                                    Label{width: Fill text: o.id + " · " + o.carrier + " · " + o.status draw_text.color: #x8e8e93 draw_text.text_style.font_size: 12}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }}
+
+    detail := ScrollYView{width: Fill height: Fill flow: Down padding: 0 spacing: 0
+        on_render: || {
+            let o = find_order(current_order_id)
+            if o == nil {
+                Label{width: Fill text: "未找到订单" draw_text.color: #x1c1c1e draw_text.text_style.font_size: 16 padding: Inset{left: 16 right: 16 top: 16}}
+            }
+            if o != nil {
+                let s = score(o)
+                let d = decisions[o.id]
+
+                View{width: Fill height: Fit padding: Inset{left: 16 right: 16 top: 12 bottom: 0}
+                    ButtonFlat{text: "← 返回总览" height: 36 padding: Inset{left: 12 right: 12}
+                        on_click: || show("overview", "")
+                        draw_bg +: {color: #xe5e5ea color_hover: #xd1d1d6 color_down: #xb0b0b5 border_size: 0.0}
+                        draw_text +: {color: #x1c1c1e color_hover: #x1c1c1e color_down: #x1c1c1e}}
+                }
+
+                View{width: Fill height: Fit padding: Inset{left: 16 right: 16 top: 16 bottom: 8} flow: Down spacing: 4
+                    View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 8
+                        View{width: Fit height: 24 padding: Inset{left: 8 right: 8 top: 4 bottom: 4} draw_bg.color: #x8e8e93
+                            Label{width: Fit text: o.platform draw_text.color: #xffffffff draw_text.text_style.font_size: 12}}
+                        Label{width: Fill text: o.name draw_text.color: #x1c1c1e draw_text.text_style.font_size: 20}
+                    }
+                    Label{width: Fill text: o.id draw_text.color: #x8e8e93 draw_text.text_style.font_size: 12}
+                }
+
+                View{width: Fill height: Fit padding: Inset{left: 16 right: 16 top: 0 bottom: 8}
+                    SolidView{width: Fill height: Fit draw_bg.color: #xffffffff
+                        View{width: Fill height: Fit flow: Down padding: 14 spacing: 6
+                            Label{width: Fill text: "物流信息" draw_text.color: #x8e8e93 draw_text.text_style.font_size: 12}
+                            Label{width: Fill text: "承运商: " + o.carrier draw_text.color: #x1c1c1e draw_text.text_style.font_size: 15}
+                            Label{width: Fill text: "最新状态: " + o.status draw_text.color: #x1c1c1e draw_text.text_style.font_size: 15}
+                        }
+                    }
+                }
+
+                if s >= 40 and d == nil {
+                    View{width: Fill height: Fit padding: Inset{left: 16 right: 16 top: 0 bottom: 8}
+                        SolidView{width: Fill height: Fit draw_bg.color: #xffeaea
+                            View{width: Fill height: Fit flow: Down padding: 14 spacing: 8
+                                Label{width: Fill text: "⚠ 建议立即干预" draw_text.color: #xff3b30 draw_text.text_style.font_size: 16}
+                                Label{width: Fill text: urgency_text(s) + " · " + action_text(s) draw_text.color: #xff3b30 draw_text.text_style.font_size: 13}
+                                Label{width: Fill text: action_script(o) draw_text.color: #x1c1c1e draw_text.text_style.font_size: 13}
+                                ButtonFlat{width: Fill text: "执行建议" height: 44 padding: Inset{left: 16 right: 16}
+                                    on_click: || show("confirm", current_order_id)
+                                    draw_bg +: {color: #xff3b30 color_hover: #xff2419 color_down: #xcc2f26 border_size: 0.0}
+                                    draw_text +: {color: #xffffffff color_hover: #xffffffff color_down: #xffffffff}}
+                            }
+                        }
+                    }
+                }
+
+                if d != nil and d.result == "confirmed" {
+                    View{width: Fill height: Fit padding: Inset{left: 16 right: 16 top: 0 bottom: 8}
+                        SolidView{width: Fill height: Fit draw_bg.color: #xeafbe9
+                            View{width: Fill height: Fit flow: Down padding: 14 spacing: 8
+                                Label{width: Fill text: "✓ 已确认执行" draw_text.color: #x34c759 draw_text.text_style.font_size: 16}
+                                Label{width: Fill text: d.action_script draw_text.color: #x1c1c1e draw_text.text_style.font_size: 13}
+                            }
+                        }
+                    }
+                }
+
+                if d != nil and d.result == "rejected" {
+                    View{width: Fill height: Fit padding: Inset{left: 16 right: 16 top: 0 bottom: 8}
+                        SolidView{width: Fill height: Fit draw_bg.color: #xf2f2f7
+                            View{width: Fill height: Fit flow: Down padding: 14 spacing: 8
+                                Label{width: Fill text: "✗ 已驳回" draw_text.color: #x8e8e93 draw_text.text_style.font_size: 16}
+                                Label{width: Fill text: "理由: " + d.reason draw_text.color: #x8e8e93 draw_text.text_style.font_size: 13}
+                            }
+                        }
+                    }
+                }
+
+                if confirm_mode and s >= 40 and d == nil {
+                    View{width: Fill height: Fit padding: Inset{left: 16 right: 16 top: 0 bottom: 8}
+                        SolidView{width: Fill height: Fit draw_bg.color: #xffffffff
+                            View{width: Fill height: Fit flow: Down padding: 14 spacing: 8
+                                Label{width: Fill text: "确认执行？" draw_text.color: #x1c1c1e draw_text.text_style.font_size: 16}
+                                Label{width: Fill text: "将生成行动文案，可复制到对应 App 发送" draw_text.color: #x8e8e93 draw_text.text_style.font_size: 12}
+                                Label{width: Fill text: action_script(o) draw_text.color: #x1c1c1e draw_text.text_style.font_size: 12}
+                                Label{width: Fill text: "驳回理由（可空）" draw_text.color: #x8e8e93 draw_text.text_style.font_size: 12}
+                                reject_input := TextInput{width: Fill height: 40 empty_text: "选填"
+                                    draw_bg +: {color: #xf2f2f7 color_hover: #xf2f2f7 color_focus: #xf2f2f7 color_empty: #xf2f2f7 border_size: 0.0}
+                                    draw_text +: {color: #x1c1c1e color_hover: #x1c1c1e color_focus: #x1c1c1e color_empty: #x8e8e93 color_empty_hover: #x8e8e93}}
+                                View{width: Fill height: Fit flow: Right spacing: 8
+                                    ButtonFlat{width: Fill text: "驳回" height: 44 padding: Inset{left: 16 right: 16}
+                                        on_click: || reject_action()
+                                        draw_bg +: {color: #xe5e5ea color_hover: #xd1d1d6 color_down: #xb0b0b5 border_size: 0.0}
+                                        draw_text +: {color: #x1c1c1e color_hover: #x1c1c1e color_down: #x1c1c1e}}
+                                    ButtonFlat{width: Fill text: "确认执行" height: 44 padding: Inset{left: 16 right: 16}
+                                        on_click: || confirm_action()
+                                        draw_bg +: {color: #xff3b30 color_hover: #xff2419 color_down: #xcc2f26 border_size: 0.0}
+                                        draw_text +: {color: #xffffffff color_hover: #xffffffff color_down: #xffffffff}}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }}
+
+    result_pane := ScrollYView{width: Fill height: Fill flow: Down padding: 0 spacing: 0
+        on_render: || {
+            View{width: Fill height: Fill flow: Down padding: Inset{left: 24 right: 24 top: 32 bottom: 32}
+                View{width: Fill height: Fit flow: Down align: Align{x: 0.5} spacing: 12
+                    if result_ok {
+                        Label{width: Fill text: "✓" draw_text.color: #x34c759 draw_text.text_style.font_size: 64}
+                        Label{width: Fill text: "已生成行动预案" draw_text.color: #x1c1c1e draw_text.text_style.font_size: 20}
+                        Label{width: Fill text: "请在对应 App 中粘贴发送" draw_text.color: #x8e8e93 draw_text.text_style.font_size: 13}
+                        View{width: Fill height: Fit padding: Inset{top: 8 bottom: 8}
+                            SolidView{width: Fill height: Fit draw_bg.color: #xf2f2f7
+                                View{width: Fill height: Fit flow: Down padding: 12 spacing: 6
+                                    Label{width: Fill text: result_script draw_text.color: #x1c1c1e draw_text.text_style.font_size: 14}
+                                }
+                            }
+                        }
+                    }
+                    if result_ok == false {
+                        Label{width: Fill text: "✗" draw_text.color: #x8e8e93 draw_text.text_style.font_size: 64}
+                        Label{width: Fill text: "已记录驳回决定" draw_text.color: #x1c1c1e draw_text.text_style.font_size: 20}
+                        Label{width: Fill text: "理由: " + result_reason draw_text.color: #x8e8e93 draw_text.text_style.font_size: 13}
+                        Label{width: Fill text: "该订单已降回正常优先级" draw_text.color: #x8e8e93 draw_text.text_style.font_size: 13}
+                    }
+                    View{width: Fill height: Fit padding: Inset{top: 16 bottom: 0} flow: Right align: Align{x: 0.5}
+                        ButtonFlat{width: Fit height: 44 padding: Inset{left: 24 right: 24}
+                            on_click: || { show("overview", "") rescan() }
+                            text: "返回总览"
+                            draw_bg +: {color: #x007aff color_hover: #x0a84ff color_down: #x0062cc border_size: 0.0}
+                            draw_text +: {color: #xffffffff color_hover: #xffffffff color_down: #xffffffff}}
+                    }
+                }
+            }
+        }}
+}
+
+start_timeout(0.05, || {
+    ui.detail.set_visible(false)
+    ui.result_pane.set_visible(false)
+})

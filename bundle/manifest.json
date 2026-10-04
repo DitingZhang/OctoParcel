@@ -1,0 +1,23 @@
+{
+  "agent": null,
+  "capabilities": [
+    "storage"
+  ],
+  "compute": {
+    "instruction_budget": null,
+    "memory_bytes": null
+  },
+  "id": "parcel-tracker",
+  "integrity": {
+    "bundle_blake3": "f235951e27be6c08ad1060bb25d6da743efe6d768271e45f38d307eb8c2da559"
+  },
+  "name": "Parcel Tracker",
+  "network": {
+    "hosts": []
+  },
+  "schema": 1,
+  "storage": {
+    "max_bytes": null
+  },
+  "version": "0.1.0"
+}
