@@ -1,58 +1,69 @@
 # Parcel Tracker
 
-Agentic App 黑客松初赛作品。购物与物流赛道。
+> 主动出击的 Agentic 包裹管家——不是被动的物流查询器。
 
-```text
-"我的快递到哪了？"  → 被动查询器会回答这个问题
-"我现在该对哪笔订单做点什么？"  → Parcel Tracker 回答这个问题
-```
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Hackathon](https://img.shields.io/badge/Agentic_App_Hackathon-初赛-orange)](#)
+
+## 简介
 
 包裹追踪类 App 多到数不清，**它们都做错了一件事**——把"展示订单列表"当成了产品价值。但真正花你时间的从来不是"看"，是"接下来怎么办"：是去催那个停滞 3 天的卖家，还是去申请那个今晚 23:59 就关掉的退货窗口？
 
-Parcel Tracker 做的事很简单：扫一遍订单，**挑出需要你拍板的那一笔**，把现成的话术写好，让你**确认或驳回**。它不替你下单、不替你付款、不替你发消息——它只替你判断"哪一笔最值得你花 30 秒"。
+Parcel Tracker 不替你下单、不替你付款、不替你发消息——它只做一件事：**替你判断哪一笔订单最值得你花 30 秒**，把现成的话术写好，等你拍板（确认执行 / 驳回）。
 
----
+Agentic App 黑客松初赛作品，购物与物流赛道。4 笔 Mock 订单 + 确定性评分规则，无外部 API、无 LLM 调用。
 
-## 它怎么运转的
+## 功能特性
 
+- **主动扫描** — 启动时和 `⟳ 重新评估` 时重跑评分，按 `time_now() - boot_time` 算出真实时间漂移
+- **三种异常识别** — 物流停滞（24h 无更新）/ 退货窗口临近（已签收且剩余 < 48h）/ 已逾期（过 ETA 未签收）
+- **可执行的话术生成** — 给卖家催单 / 申请退货退款两类文案，写好待复制粘贴
+- **授权确认流** — 详情页点"执行建议"→ 二次确认卡 → 确认才落盘，未经授权不落地
+- **驳回也是合法结果** — 灰色✗路径，理由可选，订单回到正常优先级；不是边缘情况
+- **跨重启记忆** — `session.json` + `decisions.json` 持久化，避免对同一笔订单反复决策
+- **零外部依赖** — `network.hosts = []`，`capabilities = ["storage"]`
+
+## 技术栈
+
+- **OctoScript (L0)** — 脚本应用语言，`bundle/main.splash` 430 行
+- **OctoSense card-host** — 在能力沙箱里执行 bundle
+- **Hub** — 准入与完整性校验
+- **glibc / X11 / Wayland** — card-host 的图形后端
+- **fcitx5** — WSLg 中文输入法（可选）
+
+## 环境要求
+
+- **OctoScript-App-Design-Flow** — 仓库内的 `tools/octo`、`OctoSense-App-Hub/target/release/{card-host,hub}`
+- **WSLg 或 X11 转发** — card-host 需要图形上下文（headless 用 xvfb-run + 软件 GL）
+- **可选 fcitx5** — `apt install fcitx5 fcitx5-chinese-addons` 才能在 TextInput 打中文
+- **WSL2 Linux 发行版** — 已验证 Ubuntu 24.04 / glibc 兼容
+- **Git + SSH key** — 已配好 GitHub 推送权限
+
+## 安装
+
+```bash
+# 1. 拉取代码
+git clone https://github.com/DitingZhang/OctoParcel.git
+cd OctoParcel
+
+# 2. 校验 + 重新盖章（hub 完整性 + L0 语法）
+~/agentic-new/OctoScript-App-Design-Flow/tools/octo check bundle
+
+# 3. 启动带远程控制的 card-host
+~/agentic-new/OctoScript-App-Design-Flow/tools/octo run bundle --port 8142 --detach
+
+# 4. 验证它在跑
+curl -s 127.0.0.1:8142/snap | python3 -m json.tool | head -20
+
+# 5. 跑一遍流程并截图
+~/agentic-new/OctoScript-App-Design-Flow/tools/octo shot 8142 out.png
 ```
-   启动 → 扫描 4 笔 Mock 订单
-       ↓
-   按确定性评分排序
-       ↓
-   最高分的那一笔在顶部 Banner 高亮
-       ↓
-   点开 → 看到建议话术
-       ↓
-   ┌─────────────┐
-   │ 确认执行     │ → 绿色 ✓  → 记录 confirmed  → 回到列表
-   │ 驳回（可选理由）│ → 灰色 ✗  → 记录 rejected  → 回到列表
-   └─────────────┘
-       ↓
-   重新评估按钮（⟳）可以再跑一遍评分，时间流逝会改变"现在最急的是哪一笔"
-```
 
-没有任何 LLM 调用、没有外部 API。**4 笔订单是写死的，评分规则是 5 行代码**——这是初赛原型的诚实选择，把复杂度留在 UI 和状态机里，不堆在 prompt 上。
+需要 `--allow-unsigned`（这次没接发布者密钥）；中文输入需要 `GTK_IM_MODULE=fcitx QT_IM_MODULE=fcitx XMODIFIERS=@im=fcitx` 三个环境变量下启动 card-host。详见 `bundle/main.splash` 顶部的注释。
 
 ---
 
-## 评分规则（5 行讲清楚）
-
-| 条件 | 分数 | 标签 | 建议 |
-|---|---|---|---|
-| 已签收，且 7 天退货窗口**剩余不到 48 小时** | 60 | return_closing | 申请退货退款 |
-| **24 小时以上没更新**物流 | 40 | stuck | 联系卖家催单 |
-| 已过预计送达时间 + 未签收 | 40 | overdue | 联系卖家催单 |
-| 已经过用户决策的订单 | 5 | — | 不再进 Banner |
-| 其他 | 10 | normal | 灰色标签，无 Banner |
-
-`drift = time_now() - boot_time` 反映"卡片打开至今过了多久"，所以**按 ⟳ 重新评估 时，同一笔订单可能从 80 掉到 60，从 60 掉到 5**——时间是真的在走的。
-
----
-
-## 5 张截图
-
-整条路截图存在 `bundle/screenshots/` 下：
+### 流程截图
 
 | | |
 |---|---|
@@ -62,69 +73,25 @@ Parcel Tracker 做的事很简单：扫一遍订单，**挑出需要你拍板的
 | `04-result-ok.png` 结果-成功<br>绿色 ✓，写好待复制粘贴的文案 | ![result-ok](bundle/screenshots/04-result-ok.png) |
 | `05-result-fail.png` 结果-驳回<br>灰色 ✗，记录了驳回理由，该订单回到普通优先级 | ![result-fail](bundle/screenshots/05-result-fail.png) |
 
-绿色和灰色是**同级的两条出口**——你点驳回，结果页就是 ✗；没有任何"对不起刚才误操作"的二次挽留。这条路径也是产品的一部分，不是边缘情况。
+### 评分规则
 
----
+| 条件 | 分数 | 标签 | 建议 |
+|---|---|---|---|
+| 已签收，且 7 天退货窗口**剩余不到 48 小时** | 60 | return_closing | 申请退货退款 |
+| **24 小时以上没更新**物流 | 40 | stuck | 联系卖家催单 |
+| 已过预计送达时间 + 未签收 | 40 | overdue | 联系卖家催单 |
+| 已经过用户决策的订单 | 5 | — | 不再进 Banner |
+| 其他 | 10 | normal | 灰色标签，无 Banner |
 
-## 怎么跑
+### 已知坑
 
-```bash
-cd ~/apps/script-app-demo
-
-# 1. 校验 + 重新盖章（hub 完整性 + L0 语法）
-~/agentic-new/OctoScript-App-Design-Flow/tools/octo check bundle
-
-# 2. 启动带远程控制的 card-host（默认监听 :8142）
-~/agentic-new/OctoScript-App-Design-Flow/tools/octo run bundle --port 8142 --detach
-
-# 3. 遥控
-curl -s 127.0.0.1:8142/snap                       # 控件树 JSON
-curl -s '127.0.0.1:8142/click?x=200&y=345'         # 点击
-curl -s 127.0.0.1:8142/quit                       # 关掉
-
-# 或者直接截一张
-~/agentic-new/OctoScript-App-Design-Flow/tools/octo shot 8142 out.png
-```
-
-需要 WSLg 或 X11 转发。`--allow-unsigned` 必须带，本次初赛构建没有发布者签名。
-
----
-
-## 数据是假的，未来是真的
-
-- 4 笔订单写在 `bundle/main.splash` 顶部，刻意覆盖三种异常路径 + 一笔正常件。
-- `network.hosts = []`，`capabilities = ["storage"]`，**没有任何外发请求**。
-- 状态文件 `~/apps/script-app-demo/.local-state/parcel-tracker/`：
-  - `session.json` — `{boot_time}`，让"重新评估"能算出真实的时间漂移
-  - `decisions.json` — `{order_id: {result, reason, action_script, decided_at}}`，避免下次启动让你对同一笔订单重新决策
-- 重置：`rm -rf ~/apps/script-app-demo/.local-state/parcel-tracker`
-
-下一步要做的事很明确——把 `orders = [...]` 换成 `fs.read("orders.json").parse_json()`，加一个 `fetch()` 拉真实物流接口。**UI、评分、状态机不动**。
-
----
-
-## 已知坑
-
-| 现象 | 原因 / 解法 |
+| 现象 | 解法 |
 |---|---|
-| TextInput 打不出中文（WSLg 下） | `apt install fcitx5 fcitx5-chinese-addons`，`GTK_IM_MODULE=fcitx QT_IM_MODULE=fcitx XMODIFIERS=@im=fcitx`，在该环境下启动 card-host。 |
-| `octo shot` / `/g` 接口返回 "grab timeout" | card-host 的 GL 帧缓冲没渲染。Linux 上：`LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=softpipe xvfb-run` 跑；或用 `MAKEPAD_WRITE_FRAMEBUFFER_PNG=/path/frame.png` 直接落盘 PNG。 |
-| `octo check` 报 `publisher-signature: unsigned` | 这次没接发布者密钥。本地调试加 `--allow-unsigned`，正式上架需要 publisher key。 |
-| `manifest.json` 被 `octo check` 改写 | 那是它在重新算 blake3 integrity，正常现象。 |
-| curl 不到 127.0.0.1 | shell 里 `http_proxy` 走代理会劫持本地请求。加 `--noproxy '*'` 或 `NO_PROXY=127.0.0.1`。 |
+| TextInput 打不出中文（WSLg） | `apt install fcitx5 fcitx5-chinese-addons` + 三个 IM env |
+| `/g` 返回 "grab timeout" | `LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=softpipe xvfb-run`，或 `MAKEPAD_WRITE_FRAMEBUFFER_PNG` 直接落盘 |
+| `octo check` 报 unsigned | 本地加 `--allow-unsigned`；上架要 publisher key |
+| curl 127.0.0.1 不通 | shell `http_proxy` 劫持了，加 `--noproxy '*'` |
 
 ---
-
-## 技术栈
-
-- **OctoScript (L0)** — 脚本应用语言，`bundle/main.splash` 430 行
-- **OctoSense card-host** — 在能力沙箱里跑 bundle
-- **Hub** — 准入与完整性校验
-
-`bundle/` 是提交物；`.local-state/`、`target/`、日志都在外面，`.gitignore` 已经管好。
-
----
-
-## 许可证
 
 Apache-2.0。
