@@ -26,3 +26,14 @@ target/
 
 # Card-host artifacts
 card-host.log
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# 通用日志
+*.log
+
+# 临时抓图/调试产物
+/tmp-snap*.json
+frame*.png
