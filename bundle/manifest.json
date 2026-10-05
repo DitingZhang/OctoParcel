@@ -7,11 +7,11 @@
     "instruction_budget": null,
     "memory_bytes": null
   },
-  "id": "parcel-tracker",
+  "id": "octoparcel",
   "integrity": {
-    "bundle_blake3": "c51de2102120e4d47fd43e0cb906607c502d54148874daab0d89341b12db93d8"
+    "bundle_blake3": "b91fcadfd1856b6740892c0ba8104f25b0779210f2b4143bda6e0ab54d1be740"
   },
-  "name": "Parcel Tracker",
+  "name": "OctoParcel",
   "network": {
     "hosts": []
   },

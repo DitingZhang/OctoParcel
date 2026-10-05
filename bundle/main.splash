@@ -1,5 +1,5 @@
 // =====================================================================
-// Parcel Tracker — Agentic parcel butler (hackathon build)
+// OctoParcel — Agentic parcel butler (hackathon build)
 // L0 notes:
 //   * widgets must be declared INLINE in on_render; calling a function
 //     that returns a widget renders nothing
@@ -217,7 +217,7 @@ SolidView{width: Fill height: Fill draw_bg.color: #xf2f2f7
             // Header
             View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 8 padding: Inset{left: 16 right: 16 top: 16 bottom: 8}
                 View{width: Fill height: Fit flow: Down spacing: 2
-                    Label{width: Fill text: "Parcel Tracker" draw_text.color: #x1c1c1e draw_text.text_style.font_size: 22}
+                    Label{width: Fill text: "OctoParcel" draw_text.color: #x1c1c1e draw_text.text_style.font_size: 22}
                     Label{width: Fill text: "主动监控 · 4 笔订单" draw_text.color: #x8e8e93 draw_text.text_style.font_size: 12}
                 }
                 ButtonFlat{text: "⟳ 重新评估" height: 36 padding: Inset{left: 14 right: 14}

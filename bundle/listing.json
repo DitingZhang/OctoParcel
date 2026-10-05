@@ -17,12 +17,12 @@
   ],
   "icon": "assets/icon.svg",
   "platforms": [
-    "android"
+    "linux"
   ],
   "publisher": {
-    "name": "Hackathon Team",
-    "support": "https://example.com/support",
-    "privacy_policy_url": "https://example.com/privacy"
+    "name": "11",
+    "support": "https://github.com/DitingZhang/OctoParcel",
+    "privacy_policy_url": "https://github.com/DitingZhang/OctoParcel/blob/main/README.md"
   },
   "release_notes": "Initial hackathon build.",
   "age_rating": "all",
