@@ -101,8 +101,7 @@ Kindle 在 京东物流 36 小时没动,详情页红色"⚠ 建议立即干预"�
 
 ## Demo Video
 
-[1 分 30 秒完整流程演示](视频链接)
-(视频链接我稍后补,先填 TODO 占位。)
+[1 分 30 秒完整流程演示](https://www.bilibili.com/video/BV1CsHZ6oESC)
 
 
 ## 技术栈
