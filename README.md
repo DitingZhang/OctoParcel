@@ -37,6 +37,24 @@ curl --noproxy '*' -s 127.0.0.1:8142/snap | python3 -m json.tool | head
 
 打开 App Hub GUI 或 `card-host` 窗口,即可看到界面。
 
+## 验证情况
+
+### 已验证
+- ✅ `octo check bundle` → PASSED
+- ✅ card-host 启动 → `first frame drawn`
+- ✅ 4 笔 Mock 订单按紧急度降序
+- ✅ 点 Kindle 卡 → 详情页 → 催单话术
+- ✅ 执行建议 → 确认页 → 确认执行 → 结果页(✓ 绿)
+- ✅ 返回 → 重新评估 → Banner 切换到罗技
+- ✅ 执行建议 → 驳回(理由)→ 结果页(✗ 灰)
+- ✅ 持久化:重启后 `decisions.json` 保留
+- ✅ 5 张截图覆盖完整流程
+
+### 未验证
+- ⏳ 真实物流 API(当前是 Mock 数据)
+- ⏳ 中文输入(环境限制:fcitx5 在 card-host 里不工作)
+- ⏳ 手机端(等 App Hub 上架)
+
 ## Agentic 体现在哪
 
 不是聊天机器人,也不是"通知中心"。三件事让它算 Agentic:
@@ -83,7 +101,8 @@ Kindle 在 京东物流 36 小时没动,详情页红色"⚠ 建议立即干预"�
 
 ## Demo Video
 
-1-2 分钟走完"总览 → 详情 → 二次确认 → 结果-成功 → 结果-驳回"。⏳ 录屏待上传。
+[1 分 30 秒完整流程演示](视频链接)
+(视频链接我稍后补,先填 TODO 占位。)
 
 
 ## 技术栈
@@ -92,6 +111,16 @@ Kindle 在 京东物流 36 小时没动,详情页红色"⚠ 建议立即干预"�
 - **OctoSense card-host** — 在能力沙箱里执行 bundle
 - **Hub** — 准入与完整性校验
 - **Makepad** — GPU 渲染引擎
+
+## 数据来源与限制
+
+| 项 | 当前状态 |
+|---|---|
+| 订单数据 | 4 笔 Mock 订单(演示用,覆盖 3 类异常 + 1 笔正常) |
+| 物流状态 | 确定性规则模拟(按 `last_update` / `signed_offset` 计算) |
+| API 调用 | 无(`capabilities = ["storage"]`, `network.hosts = []`) |
+| LLM 调用 | 无(评分是 5 行确定性规则,可验证、无幻觉风险) |
+| 后续计划 | 接 APIZero 真实快递接口(复赛阶段) |
 
 ## 仓库结构
 
